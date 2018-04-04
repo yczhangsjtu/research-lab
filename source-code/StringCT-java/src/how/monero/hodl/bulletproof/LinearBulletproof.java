@@ -347,8 +347,8 @@ public class LinearBulletproof
         Hi = new Curve25519Point[N];
         for (int i = 0; i < N; i++)
         {
-            Gi[i] = getHpnGLookup(2*i);
-            Hi[i] = getHpnGLookup(2*i+1);
+            Gi[i] = getHpnGLookup(2*i); // Gi[i] = 2i * G
+            Hi[i] = getHpnGLookup(2*i+1); // Hi[i] = (2i+1) * G
         }
 
         // Run a bunch of randomized trials

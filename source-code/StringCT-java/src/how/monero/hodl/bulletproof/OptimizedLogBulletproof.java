@@ -52,6 +52,19 @@ public class OptimizedLogBulletproof
             this.t = t;
         }
     }
+    
+    public static class InnerProductProofTuple {
+        private Curve25519Point[] L;
+        private Curve25519Point[] R;
+        private Scalar a;
+        private Scalar b;
+    	public InnerProductProofTuple(Curve25519Point[] L, Curve25519Point[] R, Scalar a, Scalar b) {
+            this.L = L;
+            this.R = R;
+            this.a = a;
+            this.b = b;
+    	}
+    }
 
     /* Given two scalar arrays, construct a vector commitment */
     public static Curve25519Point VectorExponent(Scalar[] a, Scalar[] b)
@@ -219,6 +232,61 @@ public class OptimizedLogBulletproof
 
         return result;
     }
+    
+    public static InnerProductProofTuple InnerProductArgument(Scalar[] l, Scalar[] r, Scalar y, Scalar x_ip) {
+
+        Scalar hashCache = x_ip;
+        
+        // These are used in the inner product rounds
+        int nprime = N;
+        Curve25519Point[] Gprime = new Curve25519Point[N];
+        Curve25519Point[] Hprime = new Curve25519Point[N];
+        Scalar[] aprime = new Scalar[N];
+        Scalar[] bprime = new Scalar[N];
+        for (int i = 0; i < N; i++)
+        {
+            Gprime[i] = Gi[i];
+            Hprime[i] = Hi[i].scalarMultiply(Invert(y).pow(i));
+            aprime[i] = l[i];
+            bprime[i] = r[i];
+        }
+        Curve25519Point[] L = new Curve25519Point[logN];
+        Curve25519Point[] R = new Curve25519Point[logN];
+        int round = 0; // track the index based on number of rounds
+        Scalar[] w = new Scalar[logN]; // this is the challenge x in the inner product protocol
+
+        // PAPER LINE 13
+        while (nprime > 1)
+        {
+            // PAPER LINE 15
+            nprime /= 2;
+
+            // PAPER LINES 16-17
+            Scalar cL = InnerProduct(ScalarSlice(aprime,0,nprime),ScalarSlice(bprime,nprime,bprime.length));
+            Scalar cR = InnerProduct(ScalarSlice(aprime,nprime,aprime.length),ScalarSlice(bprime,0,nprime));
+
+            // PAPER LINES 18-19
+            L[round] = VectorExponentCustom(CurveSlice(Gprime,nprime,Gprime.length),CurveSlice(Hprime,0,nprime),ScalarSlice(aprime,0,nprime),ScalarSlice(bprime,nprime,bprime.length)).add(H.scalarMultiply(cL.mul(x_ip)));
+            R[round] = VectorExponentCustom(CurveSlice(Gprime,0,nprime),CurveSlice(Hprime,nprime,Hprime.length),ScalarSlice(aprime,nprime,aprime.length),ScalarSlice(bprime,0,nprime)).add(H.scalarMultiply(cR.mul(x_ip)));
+
+            // PAPER LINES 21-22
+            hashCache = hashToScalar(concat(hashCache.bytes,L[round].toBytes()));
+            hashCache = hashToScalar(concat(hashCache.bytes,R[round].toBytes()));
+            w[round] = hashCache; // w is the challenge x in paper
+
+            // PAPER LINES 24-25
+            Gprime = Hadamard2(VectorScalar2(CurveSlice(Gprime,0,nprime),Invert(w[round])),VectorScalar2(CurveSlice(Gprime,nprime,Gprime.length),w[round]));
+            Hprime = Hadamard2(VectorScalar2(CurveSlice(Hprime,0,nprime),w[round]),VectorScalar2(CurveSlice(Hprime,nprime,Hprime.length),Invert(w[round])));
+
+            // PAPER LINES 28-29
+            aprime = VectorAdd(VectorScalar(ScalarSlice(aprime,0,nprime),w[round]),VectorScalar(ScalarSlice(aprime,nprime,aprime.length),Invert(w[round])));
+            bprime = VectorAdd(VectorScalar(ScalarSlice(bprime,0,nprime),Invert(w[round])),VectorScalar(ScalarSlice(bprime,nprime,bprime.length),w[round]));
+
+            round += 1;
+        }
+        
+        return new InnerProductProofTuple(L, R, aprime[0], bprime[0]);
+    }
 
     /* Given a value v (0..2^N-1) and a mask gamma, construct a range proof */
     public static ProofTuple PROVE(Scalar v, Scalar gamma)
@@ -321,56 +389,59 @@ public class OptimizedLogBulletproof
         hashCache = hashToScalar(concat(hashCache.bytes,t.bytes));
         Scalar x_ip = hashCache;
 
-        // These are used in the inner product rounds
-        int nprime = N;
-        Curve25519Point[] Gprime = new Curve25519Point[N];
-        Curve25519Point[] Hprime = new Curve25519Point[N];
-        Scalar[] aprime = new Scalar[N];
-        Scalar[] bprime = new Scalar[N];
-        for (int i = 0; i < N; i++)
-        {
-            Gprime[i] = Gi[i];
-            Hprime[i] = Hi[i].scalarMultiply(Invert(y).pow(i));
-            aprime[i] = l[i];
-            bprime[i] = r[i];
-        }
-        Curve25519Point[] L = new Curve25519Point[logN];
-        Curve25519Point[] R = new Curve25519Point[logN];
-        int round = 0; // track the index based on number of rounds
-        Scalar[] w = new Scalar[logN]; // this is the challenge x in the inner product protocol
+//        // These are used in the inner product rounds
+//        int nprime = N;
+//        Curve25519Point[] Gprime = new Curve25519Point[N];
+//        Curve25519Point[] Hprime = new Curve25519Point[N];
+//        Scalar[] aprime = new Scalar[N];
+//        Scalar[] bprime = new Scalar[N];
+//        for (int i = 0; i < N; i++)
+//        {
+//            Gprime[i] = Gi[i];
+//            Hprime[i] = Hi[i].scalarMultiply(Invert(y).pow(i));
+//            aprime[i] = l[i];
+//            bprime[i] = r[i];
+//        }
+//        Curve25519Point[] L = new Curve25519Point[logN];
+//        Curve25519Point[] R = new Curve25519Point[logN];
+//        int round = 0; // track the index based on number of rounds
+//        Scalar[] w = new Scalar[logN]; // this is the challenge x in the inner product protocol
+//
+//        // PAPER LINE 13
+//        while (nprime > 1)
+//        {
+//            // PAPER LINE 15
+//            nprime /= 2;
+//
+//            // PAPER LINES 16-17
+//            Scalar cL = InnerProduct(ScalarSlice(aprime,0,nprime),ScalarSlice(bprime,nprime,bprime.length));
+//            Scalar cR = InnerProduct(ScalarSlice(aprime,nprime,aprime.length),ScalarSlice(bprime,0,nprime));
+//
+//            // PAPER LINES 18-19
+//            L[round] = VectorExponentCustom(CurveSlice(Gprime,nprime,Gprime.length),CurveSlice(Hprime,0,nprime),ScalarSlice(aprime,0,nprime),ScalarSlice(bprime,nprime,bprime.length)).add(H.scalarMultiply(cL.mul(x_ip)));
+//            R[round] = VectorExponentCustom(CurveSlice(Gprime,0,nprime),CurveSlice(Hprime,nprime,Hprime.length),ScalarSlice(aprime,nprime,aprime.length),ScalarSlice(bprime,0,nprime)).add(H.scalarMultiply(cR.mul(x_ip)));
+//
+//            // PAPER LINES 21-22
+//            hashCache = hashToScalar(concat(hashCache.bytes,L[round].toBytes()));
+//            hashCache = hashToScalar(concat(hashCache.bytes,R[round].toBytes()));
+//            w[round] = hashCache; // w is the challenge x in paper
+//
+//            // PAPER LINES 24-25
+//            Gprime = Hadamard2(VectorScalar2(CurveSlice(Gprime,0,nprime),Invert(w[round])),VectorScalar2(CurveSlice(Gprime,nprime,Gprime.length),w[round]));
+//            Hprime = Hadamard2(VectorScalar2(CurveSlice(Hprime,0,nprime),w[round]),VectorScalar2(CurveSlice(Hprime,nprime,Hprime.length),Invert(w[round])));
+//
+//            // PAPER LINES 28-29
+//            aprime = VectorAdd(VectorScalar(ScalarSlice(aprime,0,nprime),w[round]),VectorScalar(ScalarSlice(aprime,nprime,aprime.length),Invert(w[round])));
+//            bprime = VectorAdd(VectorScalar(ScalarSlice(bprime,0,nprime),Invert(w[round])),VectorScalar(ScalarSlice(bprime,nprime,bprime.length),w[round]));
+//
+//            round += 1;
+//        }
 
-        // PAPER LINE 13
-        while (nprime > 1)
-        {
-            // PAPER LINE 15
-            nprime /= 2;
-
-            // PAPER LINES 16-17
-            Scalar cL = InnerProduct(ScalarSlice(aprime,0,nprime),ScalarSlice(bprime,nprime,bprime.length));
-            Scalar cR = InnerProduct(ScalarSlice(aprime,nprime,aprime.length),ScalarSlice(bprime,0,nprime));
-
-            // PAPER LINES 18-19
-            L[round] = VectorExponentCustom(CurveSlice(Gprime,nprime,Gprime.length),CurveSlice(Hprime,0,nprime),ScalarSlice(aprime,0,nprime),ScalarSlice(bprime,nprime,bprime.length)).add(H.scalarMultiply(cL.mul(x_ip)));
-            R[round] = VectorExponentCustom(CurveSlice(Gprime,0,nprime),CurveSlice(Hprime,nprime,Hprime.length),ScalarSlice(aprime,nprime,aprime.length),ScalarSlice(bprime,0,nprime)).add(H.scalarMultiply(cR.mul(x_ip)));
-
-            // PAPER LINES 21-22
-            hashCache = hashToScalar(concat(hashCache.bytes,L[round].toBytes()));
-            hashCache = hashToScalar(concat(hashCache.bytes,R[round].toBytes()));
-            w[round] = hashCache;
-
-            // PAPER LINES 24-25
-            Gprime = Hadamard2(VectorScalar2(CurveSlice(Gprime,0,nprime),Invert(w[round])),VectorScalar2(CurveSlice(Gprime,nprime,Gprime.length),w[round]));
-            Hprime = Hadamard2(VectorScalar2(CurveSlice(Hprime,0,nprime),w[round]),VectorScalar2(CurveSlice(Hprime,nprime,Hprime.length),Invert(w[round])));
-
-            // PAPER LINES 28-29
-            aprime = VectorAdd(VectorScalar(ScalarSlice(aprime,0,nprime),w[round]),VectorScalar(ScalarSlice(aprime,nprime,aprime.length),Invert(w[round])));
-            bprime = VectorAdd(VectorScalar(ScalarSlice(bprime,0,nprime),Invert(w[round])),VectorScalar(ScalarSlice(bprime,nprime,bprime.length),w[round]));
-
-            round += 1;
-        }
-
+        InnerProductProofTuple innerProductProof = InnerProductArgument(l,r,y,x_ip);
         // PAPER LINE 58 (with inclusions from PAPER LINE 8 and PAPER LINE 20)
-        return new ProofTuple(V,A,S,T1,T2,taux,mu,L,R,aprime[0],bprime[0],t);
+        return new ProofTuple(V,A,S,T1,T2,taux,mu,
+        		innerProductProof.L,innerProductProof.R,
+        		innerProductProof.a,innerProductProof.b,t);
     }
 
     /* Given a range proof, determine if it is valid */
