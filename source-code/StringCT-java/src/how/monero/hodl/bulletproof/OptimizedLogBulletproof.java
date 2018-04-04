@@ -58,11 +58,14 @@ public class OptimizedLogBulletproof
         private Curve25519Point[] R;
         private Scalar a;
         private Scalar b;
-    	public InnerProductProofTuple(Curve25519Point[] L, Curve25519Point[] R, Scalar a, Scalar b) {
+        private Scalar t;
+        
+    	public InnerProductProofTuple(Curve25519Point[] L, Curve25519Point[] R, Scalar a, Scalar b, Scalar t) {
             this.L = L;
             this.R = R;
             this.a = a;
             this.b = b;
+            this.t = t;
     	}
     }
 
@@ -233,8 +236,8 @@ public class OptimizedLogBulletproof
         return result;
     }
     
-    public static InnerProductProofTuple InnerProductArgument(Scalar[] l, Scalar[] r, Scalar y, Scalar x_ip) {
-
+    public static InnerProductProofTuple InnerProductArgument(Scalar[] l, Scalar[] r, Scalar y, Scalar x_ip)
+    {
         Scalar hashCache = x_ip;
         
         // These are used in the inner product rounds
@@ -284,8 +287,85 @@ public class OptimizedLogBulletproof
 
             round += 1;
         }
+        Scalar t = InnerProduct(l,r);
         
-        return new InnerProductProofTuple(L, R, aprime[0], bprime[0]);
+        return new InnerProductProofTuple(L, R, aprime[0], bprime[0], t);
+    }
+    
+    public static boolean InnerProductArgumentVerify(InnerProductProofTuple proof, Curve25519Point P, Scalar y, Scalar z, Scalar mu, Scalar x_ip) {
+        Scalar hashCache = x_ip;
+        
+        // Compute the number of rounds for the inner product
+        int rounds = proof.L.length;
+
+        // PAPER LINES 21-22
+        // The inner product challenges are computed per round
+        Scalar[] w = new Scalar[rounds];
+        hashCache = hashToScalar(concat(hashCache.bytes,proof.L[0].toBytes()));
+        hashCache = hashToScalar(concat(hashCache.bytes,proof.R[0].toBytes()));
+        w[0] = hashCache;
+        if (rounds > 1)
+        {
+            for (int i = 1; i < rounds; i++)
+            {
+                hashCache = hashToScalar(concat(hashCache.bytes,proof.L[i].toBytes()));
+                hashCache = hashToScalar(concat(hashCache.bytes,proof.R[i].toBytes()));
+                w[i] = hashCache;
+            }
+        }
+
+        // Basically PAPER LINES 24-25
+        // Compute the curvepoints from G[i] and H[i]
+        Curve25519Point InnerProdG = Curve25519Point.ZERO;
+        Curve25519Point InnerProdH = Curve25519Point.ZERO;
+        for (int i = 0; i < N; i++)
+        {
+            // Convert the index to binary IN REVERSE and construct the scalar exponent
+            int index = i;
+            Scalar gScalar = proof.a;
+            Scalar hScalar = proof.b.mul(Invert(y).pow(i));
+
+            for (int j = rounds-1; j >= 0; j--)
+            {
+                int J = w.length - j - 1; // because this is done in reverse bit order
+                int basePow = (int) Math.pow(2,j); // assumes we don't get too big
+                if (index / basePow == 0) // bit is zero
+                {
+                    gScalar = gScalar.mul(Invert(w[J]));
+                    hScalar = hScalar.mul(w[J]);
+                }
+                else // bit is one
+                {
+                    gScalar = gScalar.mul(w[J]);
+                    hScalar = hScalar.mul(Invert(w[J]));
+                    index -= basePow;
+                }
+            }
+
+            // Adjust the scalars using the exponents from PAPER LINE 62
+            gScalar = gScalar.add(z);
+            hScalar = hScalar.sub(z.mul(y.pow(i)).add(z.sq().mul(Scalar.TWO.pow(i))).mul(Invert(y).pow(i)));
+
+            // Now compute the basepoint's scalar multiplication
+            // Each of these could be written as a multiexp operation instead
+            InnerProdG = InnerProdG.add(Gi[i].scalarMultiply(gScalar));
+            InnerProdH = InnerProdH.add(Hi[i].scalarMultiply(hScalar));
+        }
+
+        // PAPER LINE 26
+        Curve25519Point Pprime = P.add(G.scalarMultiply(Scalar.ZERO.sub(mu)));
+
+        for (int i = 0; i < rounds; i++)
+        {
+            Pprime = Pprime.add(proof.L[i].scalarMultiply(w[i].sq()));
+            Pprime = Pprime.add(proof.R[i].scalarMultiply(Invert(w[i]).sq()));
+        }
+        Pprime = Pprime.add(H.scalarMultiply(proof.t.mul(x_ip)));
+
+        if (!Pprime.equals(InnerProdG.add(InnerProdH).add(H.scalarMultiply(proof.a.mul(proof.b).mul(x_ip)))))
+            return false;
+
+        return true;
     }
 
     /* Given a value v (0..2^N-1) and a mask gamma, construct a range proof */
@@ -379,63 +459,14 @@ public class OptimizedLogBulletproof
 
         l = VectorAdd(VectorSubtract(aL,VectorScalar(VectorPowers(Scalar.ONE),z)),VectorScalar(sL,x));
         r = VectorAdd(Hadamard(VectorPowers(y),VectorAdd(aR,VectorAdd(VectorScalar(VectorPowers(Scalar.ONE),z),VectorScalar(sR,x)))),VectorScalar(VectorPowers(Scalar.TWO),z.sq()));
-
         Scalar t = InnerProduct(l,r);
-
+        
         // PAPER LINES 32-33
         hashCache = hashToScalar(concat(hashCache.bytes,x.bytes));
         hashCache = hashToScalar(concat(hashCache.bytes,taux.bytes));
         hashCache = hashToScalar(concat(hashCache.bytes,mu.bytes));
         hashCache = hashToScalar(concat(hashCache.bytes,t.bytes));
         Scalar x_ip = hashCache;
-
-//        // These are used in the inner product rounds
-//        int nprime = N;
-//        Curve25519Point[] Gprime = new Curve25519Point[N];
-//        Curve25519Point[] Hprime = new Curve25519Point[N];
-//        Scalar[] aprime = new Scalar[N];
-//        Scalar[] bprime = new Scalar[N];
-//        for (int i = 0; i < N; i++)
-//        {
-//            Gprime[i] = Gi[i];
-//            Hprime[i] = Hi[i].scalarMultiply(Invert(y).pow(i));
-//            aprime[i] = l[i];
-//            bprime[i] = r[i];
-//        }
-//        Curve25519Point[] L = new Curve25519Point[logN];
-//        Curve25519Point[] R = new Curve25519Point[logN];
-//        int round = 0; // track the index based on number of rounds
-//        Scalar[] w = new Scalar[logN]; // this is the challenge x in the inner product protocol
-//
-//        // PAPER LINE 13
-//        while (nprime > 1)
-//        {
-//            // PAPER LINE 15
-//            nprime /= 2;
-//
-//            // PAPER LINES 16-17
-//            Scalar cL = InnerProduct(ScalarSlice(aprime,0,nprime),ScalarSlice(bprime,nprime,bprime.length));
-//            Scalar cR = InnerProduct(ScalarSlice(aprime,nprime,aprime.length),ScalarSlice(bprime,0,nprime));
-//
-//            // PAPER LINES 18-19
-//            L[round] = VectorExponentCustom(CurveSlice(Gprime,nprime,Gprime.length),CurveSlice(Hprime,0,nprime),ScalarSlice(aprime,0,nprime),ScalarSlice(bprime,nprime,bprime.length)).add(H.scalarMultiply(cL.mul(x_ip)));
-//            R[round] = VectorExponentCustom(CurveSlice(Gprime,0,nprime),CurveSlice(Hprime,nprime,Hprime.length),ScalarSlice(aprime,nprime,aprime.length),ScalarSlice(bprime,0,nprime)).add(H.scalarMultiply(cR.mul(x_ip)));
-//
-//            // PAPER LINES 21-22
-//            hashCache = hashToScalar(concat(hashCache.bytes,L[round].toBytes()));
-//            hashCache = hashToScalar(concat(hashCache.bytes,R[round].toBytes()));
-//            w[round] = hashCache; // w is the challenge x in paper
-//
-//            // PAPER LINES 24-25
-//            Gprime = Hadamard2(VectorScalar2(CurveSlice(Gprime,0,nprime),Invert(w[round])),VectorScalar2(CurveSlice(Gprime,nprime,Gprime.length),w[round]));
-//            Hprime = Hadamard2(VectorScalar2(CurveSlice(Hprime,0,nprime),w[round]),VectorScalar2(CurveSlice(Hprime,nprime,Hprime.length),Invert(w[round])));
-//
-//            // PAPER LINES 28-29
-//            aprime = VectorAdd(VectorScalar(ScalarSlice(aprime,0,nprime),w[round]),VectorScalar(ScalarSlice(aprime,nprime,aprime.length),Invert(w[round])));
-//            bprime = VectorAdd(VectorScalar(ScalarSlice(bprime,0,nprime),Invert(w[round])),VectorScalar(ScalarSlice(bprime,nprime,bprime.length),w[round]));
-//
-//            round += 1;
-//        }
 
         InnerProductProofTuple innerProductProof = InnerProductArgument(l,r,y,x_ip);
         // PAPER LINE 58 (with inclusions from PAPER LINE 8 and PAPER LINE 20)
@@ -484,74 +515,77 @@ public class OptimizedLogBulletproof
         
         // Compute the number of rounds for the inner product
         int rounds = proof.L.length;
-
-        // PAPER LINES 21-22
-        // The inner product challenges are computed per round
-        Scalar[] w = new Scalar[rounds];
-        hashCache = hashToScalar(concat(hashCache.bytes,proof.L[0].toBytes()));
-        hashCache = hashToScalar(concat(hashCache.bytes,proof.R[0].toBytes()));
-        w[0] = hashCache;
-        if (rounds > 1)
-        {
-            for (int i = 1; i < rounds; i++)
-            {
-                hashCache = hashToScalar(concat(hashCache.bytes,proof.L[i].toBytes()));
-                hashCache = hashToScalar(concat(hashCache.bytes,proof.R[i].toBytes()));
-                w[i] = hashCache;
-            }
-        }
-
-        // Basically PAPER LINES 24-25
-        // Compute the curvepoints from G[i] and H[i]
-        Curve25519Point InnerProdG = Curve25519Point.ZERO;
-        Curve25519Point InnerProdH = Curve25519Point.ZERO;
-        for (int i = 0; i < N; i++)
-        {
-            // Convert the index to binary IN REVERSE and construct the scalar exponent
-            int index = i;
-            Scalar gScalar = proof.a;
-            Scalar hScalar = proof.b.mul(Invert(y).pow(i));
-
-            for (int j = rounds-1; j >= 0; j--)
-            {
-                int J = w.length - j - 1; // because this is done in reverse bit order
-                int basePow = (int) Math.pow(2,j); // assumes we don't get too big
-                if (index / basePow == 0) // bit is zero
-                {
-                    gScalar = gScalar.mul(Invert(w[J]));
-                    hScalar = hScalar.mul(w[J]);
-                }
-                else // bit is one
-                {
-                    gScalar = gScalar.mul(w[J]);
-                    hScalar = hScalar.mul(Invert(w[J]));
-                    index -= basePow;
-                }
-            }
-
-            // Adjust the scalars using the exponents from PAPER LINE 62
-            gScalar = gScalar.add(z);
-            hScalar = hScalar.sub(z.mul(y.pow(i)).add(z.sq().mul(Scalar.TWO.pow(i))).mul(Invert(y).pow(i)));
-
-            // Now compute the basepoint's scalar multiplication
-            // Each of these could be written as a multiexp operation instead
-            InnerProdG = InnerProdG.add(Gi[i].scalarMultiply(gScalar));
-            InnerProdH = InnerProdH.add(Hi[i].scalarMultiply(hScalar));
-        }
-
-        // PAPER LINE 26
-        Curve25519Point Pprime = P.add(G.scalarMultiply(Scalar.ZERO.sub(proof.mu)));
-
-        for (int i = 0; i < rounds; i++)
-        {
-            Pprime = Pprime.add(proof.L[i].scalarMultiply(w[i].sq()));
-            Pprime = Pprime.add(proof.R[i].scalarMultiply(Invert(w[i]).sq()));
-        }
-        Pprime = Pprime.add(H.scalarMultiply(proof.t.mul(x_ip)));
-
-        if (!Pprime.equals(InnerProdG.add(InnerProdH).add(H.scalarMultiply(proof.a.mul(proof.b).mul(x_ip)))))
-            return false;
-
+//
+//        // PAPER LINES 21-22
+//        // The inner product challenges are computed per round
+//        Scalar[] w = new Scalar[rounds];
+//        hashCache = hashToScalar(concat(hashCache.bytes,proof.L[0].toBytes()));
+//        hashCache = hashToScalar(concat(hashCache.bytes,proof.R[0].toBytes()));
+//        w[0] = hashCache;
+//        if (rounds > 1)
+//        {
+//            for (int i = 1; i < rounds; i++)
+//            {
+//                hashCache = hashToScalar(concat(hashCache.bytes,proof.L[i].toBytes()));
+//                hashCache = hashToScalar(concat(hashCache.bytes,proof.R[i].toBytes()));
+//                w[i] = hashCache;
+//            }
+//        }
+//
+//        // Basically PAPER LINES 24-25
+//        // Compute the curvepoints from G[i] and H[i]
+//        Curve25519Point InnerProdG = Curve25519Point.ZERO;
+//        Curve25519Point InnerProdH = Curve25519Point.ZERO;
+//        for (int i = 0; i < N; i++)
+//        {
+//            // Convert the index to binary IN REVERSE and construct the scalar exponent
+//            int index = i;
+//            Scalar gScalar = proof.a;
+//            Scalar hScalar = proof.b.mul(Invert(y).pow(i));
+//
+//            for (int j = rounds-1; j >= 0; j--)
+//            {
+//                int J = w.length - j - 1; // because this is done in reverse bit order
+//                int basePow = (int) Math.pow(2,j); // assumes we don't get too big
+//                if (index / basePow == 0) // bit is zero
+//                {
+//                    gScalar = gScalar.mul(Invert(w[J]));
+//                    hScalar = hScalar.mul(w[J]);
+//                }
+//                else // bit is one
+//                {
+//                    gScalar = gScalar.mul(w[J]);
+//                    hScalar = hScalar.mul(Invert(w[J]));
+//                    index -= basePow;
+//                }
+//            }
+//
+//            // Adjust the scalars using the exponents from PAPER LINE 62
+//            gScalar = gScalar.add(z);
+//            hScalar = hScalar.sub(z.mul(y.pow(i)).add(z.sq().mul(Scalar.TWO.pow(i))).mul(Invert(y).pow(i)));
+//
+//            // Now compute the basepoint's scalar multiplication
+//            // Each of these could be written as a multiexp operation instead
+//            InnerProdG = InnerProdG.add(Gi[i].scalarMultiply(gScalar));
+//            InnerProdH = InnerProdH.add(Hi[i].scalarMultiply(hScalar));
+//        }
+//
+//        // PAPER LINE 26
+//        Curve25519Point Pprime = P.add(G.scalarMultiply(Scalar.ZERO.sub(proof.mu)));
+//
+//        for (int i = 0; i < rounds; i++)
+//        {
+//            Pprime = Pprime.add(proof.L[i].scalarMultiply(w[i].sq()));
+//            Pprime = Pprime.add(proof.R[i].scalarMultiply(Invert(w[i]).sq()));
+//        }
+//        Pprime = Pprime.add(H.scalarMultiply(proof.t.mul(x_ip)));
+//
+//        if (!Pprime.equals(InnerProdG.add(InnerProdH).add(H.scalarMultiply(proof.a.mul(proof.b).mul(x_ip)))))
+//            return false;
+        InnerProductProofTuple innerProductProof = new InnerProductProofTuple(proof.L,proof.R,proof.a,proof.b,proof.t);
+        if(!InnerProductArgumentVerify(innerProductProof,P,y,z,proof.mu,x_ip))
+        	return false;
+        
         return true;
     }
 
