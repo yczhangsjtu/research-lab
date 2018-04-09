@@ -60,12 +60,11 @@ public class OptimizedLogBulletproof
         private Scalar b;
         private Scalar t;
         
-    	public InnerProductProofTuple(Curve25519Point[] L, Curve25519Point[] R, Scalar a, Scalar b, Scalar t) {
+    	public InnerProductProofTuple(Curve25519Point[] L, Curve25519Point[] R, Scalar a, Scalar b) {
             this.L = L;
             this.R = R;
             this.a = a;
             this.b = b;
-            this.t = t;
     	}
     }
 
@@ -287,12 +286,11 @@ public class OptimizedLogBulletproof
 
             round += 1;
         }
-        Scalar t = InnerProduct(l,r);
         
-        return new InnerProductProofTuple(L, R, aprime[0], bprime[0], t);
+        return new InnerProductProofTuple(L, R, aprime[0], bprime[0]);
     }
     
-    public static boolean InnerProductArgumentVerify(InnerProductProofTuple proof, Curve25519Point P, Scalar y, Scalar z, Scalar mu, Scalar x_ip) {
+    public static boolean InnerProductArgumentVerify(InnerProductProofTuple proof, Curve25519Point P, Scalar y, Scalar z, Scalar mu, Scalar x_ip, Scalar t) {
         Scalar hashCache = x_ip;
         
         // Compute the number of rounds for the inner product
@@ -360,7 +358,7 @@ public class OptimizedLogBulletproof
             Pprime = Pprime.add(proof.L[i].scalarMultiply(w[i].sq()));
             Pprime = Pprime.add(proof.R[i].scalarMultiply(Invert(w[i]).sq()));
         }
-        Pprime = Pprime.add(H.scalarMultiply(proof.t.mul(x_ip)));
+        Pprime = Pprime.add(H.scalarMultiply(t.mul(x_ip)));
 
         if (!Pprime.equals(InnerProdG.add(InnerProdH).add(H.scalarMultiply(proof.a.mul(proof.b).mul(x_ip)))))
             return false;
@@ -514,7 +512,6 @@ public class OptimizedLogBulletproof
         P = P.add(proof.S.scalarMultiply(x));
         
         // Compute the number of rounds for the inner product
-        int rounds = proof.L.length;
 //
 //        // PAPER LINES 21-22
 //        // The inner product challenges are computed per round
@@ -582,8 +579,8 @@ public class OptimizedLogBulletproof
 //
 //        if (!Pprime.equals(InnerProdG.add(InnerProdH).add(H.scalarMultiply(proof.a.mul(proof.b).mul(x_ip)))))
 //            return false;
-        InnerProductProofTuple innerProductProof = new InnerProductProofTuple(proof.L,proof.R,proof.a,proof.b,proof.t);
-        if(!InnerProductArgumentVerify(innerProductProof,P,y,z,proof.mu,x_ip))
+        InnerProductProofTuple innerProductProof = new InnerProductProofTuple(proof.L,proof.R,proof.a,proof.b);
+        if(!InnerProductArgumentVerify(innerProductProof,P,y,z,proof.mu,x_ip,proof.t))
         	return false;
         
         return true;
