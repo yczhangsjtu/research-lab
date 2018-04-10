@@ -2,11 +2,7 @@ package how.monero.hodl.bulletproof;
 
 import how.monero.hodl.crypto.Curve25519Point;
 import how.monero.hodl.crypto.Scalar;
-import how.monero.hodl.bulletproof.OptimizedLogBulletproof.InnerProductProofTuple;
-import how.monero.hodl.bulletproof.OptimizedLogBulletproof.ProofTuple;
 import how.monero.hodl.crypto.CryptoUtil;
-import java.math.BigInteger;
-import java.util.Random;
 
 import static how.monero.hodl.crypto.Scalar.randomScalar;
 import static how.monero.hodl.crypto.CryptoUtil.*;
@@ -17,6 +13,7 @@ public class InnerProductArgument {
     private static int logN;
     private static Curve25519Point G;
     private static Curve25519Point H;
+    private static Curve25519Point U;
     private static Curve25519Point[] Gi;
     private static Curve25519Point[] Hi;
     
@@ -124,19 +121,6 @@ public class InnerProductArgument {
         return result;
     }
 
-    /* Subtract two vectors */
-    public static Scalar[] VectorSubtract(Scalar[] a, Scalar[] b)
-    {
-        assert a.length == b.length;
-
-        Scalar[] result = new Scalar[a.length];
-        for (int i = 0; i < a.length; i++)
-        {
-            result[i] = a[i].sub(b[i]);
-        }
-        return result;
-    }
-
     /* Multiply a scalar and a vector */
     public static Scalar[] VectorScalar(Scalar[] a, Scalar x)
     {
@@ -190,16 +174,6 @@ public class InnerProductArgument {
         return result;
     }
 
-    /* Compute the value of k(y,z) */
-    public static Scalar ComputeK(Scalar y, Scalar z)
-    {
-        Scalar result = Scalar.ZERO;
-        result = result.sub(z.sq().mul(InnerProduct(VectorPowers(Scalar.ONE),VectorPowers(y))));
-        result = result.sub(z.pow(3).mul(InnerProduct(VectorPowers(Scalar.ONE),VectorPowers(Scalar.TWO))));
-
-        return result;
-    }
-
     public static InnerProductProofTuple InnerProductProve(Scalar[] a, Scalar[] b, Curve25519Point[] Gprime, Curve25519Point[] Hprime, Curve25519Point u, Scalar seed)
     {
         // These are used in the inner product rounds
@@ -241,6 +215,7 @@ public class InnerProductArgument {
         
         return new InnerProductProofTuple(L, R, a[0], b[0]);
     }
+    
     public static boolean InnerProductVerify(InnerProductProofTuple proof, Curve25519Point P, Curve25519Point[] Gprime, Curve25519Point[] Hprime, Curve25519Point u, Scalar seed)
     {
         int nprime = N;
@@ -274,9 +249,20 @@ public class InnerProductArgument {
         }
         
         Scalar c = proof.a.mul(proof.b);
-        if(!Pprime.equals(Gprime[0].scalarMultiply(proof.a).add(Hprime[0].scalarMultiply(proof.b)).add(H.scalarMultiply(c))))
+        if(!Pprime.equals(Gprime[0].scalarMultiply(proof.a).add(Hprime[0].scalarMultiply(proof.b)).add(u.scalarMultiply(c))))
         	return false;
     	return true;
+    }
+    
+    public static InnerProductProofTuple PROVE(Scalar[] a, Scalar[] b, Curve25519Point[] Gprime, Curve25519Point[] Hprime, Scalar seed) {
+    	Scalar x = hashToScalar(concat(seed.bytes,U.toBytes()));
+    	return InnerProductProve(a,b,Gprime,Hprime,U.scalarMultiply(x),seed);
+    }
+    
+    public static boolean VERIFY(InnerProductProofTuple proof, Curve25519Point P, Scalar c, Curve25519Point[] Gprime, Curve25519Point[] Hprime, Scalar seed) {
+    	Scalar x = hashToScalar(concat(seed.bytes,U.toBytes()));
+        P = P.add(U.scalarMultiply(c.mul(x)));
+    	return InnerProductVerify(proof,P,Gprime,Hprime,U.scalarMultiply(x),seed);
     }
 
 	public static void main(String[] args) {
@@ -287,6 +273,7 @@ public class InnerProductArgument {
         // Set the curve base points
         G = Curve25519Point.G;
         H = Curve25519Point.hashToPoint(G);
+        U = Curve25519Point.hashToPoint(H);
         Gi = new Curve25519Point[N];
         Hi = new Curve25519Point[N];
 		Scalar[] a = new Scalar[N];
@@ -297,13 +284,11 @@ public class InnerProductArgument {
             Hi[i] = getHpnGLookup(2*i+1);
         }
         // Run a bunch of randomized trials
-        Random rando = new Random();
         int TRIALS = 10;
-        int count = 0;
         
         Curve25519Point P = Curve25519Point.ZERO;
 
-        while (count < TRIALS)
+        for (int count = 0; count < TRIALS; count++)
         {
             Scalar seed = randomScalar();
             for (int i = 0; i < N; i++)
@@ -313,15 +298,31 @@ public class InnerProductArgument {
             }
             P = VectorExponentCustom(Gi,Hi,a,b);
             Scalar c = InnerProduct(a,b);
-            P = P.add(H.scalarMultiply(c));
+            P = P.add(U.scalarMultiply(c));
 
-            InnerProductProofTuple proof = InnerProductProve(a,b,Gi,Hi,H,seed);
-            if (!InnerProductVerify(proof,P,Gi,Hi,H,seed))
+            InnerProductProofTuple proof = InnerProductProve(a,b,Gi,Hi,U,seed);
+            if (!InnerProductVerify(proof,P,Gi,Hi,U,seed))
                 System.out.println("Test failed");
             else
                 System.out.println("Test succeeded");
+        }
 
-            count += 1;
+        for (int count = 0; count < TRIALS; count++)
+        {
+            Scalar seed = randomScalar();
+            for (int i = 0; i < N; i++)
+            {
+                a[i] = randomScalar();
+                b[i] = randomScalar();
+            }
+            P = VectorExponentCustom(Gi,Hi,a,b);
+            Scalar c = InnerProduct(a,b);
+
+            InnerProductProofTuple proof = PROVE(a,b,Gi,Hi,seed);
+            if (!VERIFY(proof,P,c,Gi,Hi,seed))
+                System.out.println("Test failed");
+            else
+                System.out.println("Test succeeded");
         }
 	}
 
