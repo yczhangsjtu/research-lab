@@ -9,8 +9,8 @@ import static how.monero.hodl.crypto.CryptoUtil.*;
 import static how.monero.hodl.util.ByteUtil.*;
 
 public class InnerProductArgument {
-    private static int N;
-    private static int logN;
+    private static int N = 64;
+    private static int logN = 6;
     private static Curve25519Point G;
     private static Curve25519Point H;
     private static Curve25519Point U;
@@ -30,6 +30,7 @@ public class InnerProductArgument {
             this.b = b;
     	}
     }
+    
     /* Given two scalar arrays, construct a vector commitment */
     public static Curve25519Point VectorExponent(Scalar[] a, Scalar[] b)
     {
@@ -117,6 +118,19 @@ public class InnerProductArgument {
         for (int i = 0; i < a.length; i++)
         {
             result[i] = a[i].add(b[i]);
+        }
+        return result;
+    }
+    
+    /* Subtract two vectors */
+    public static Scalar[] VectorSubtract(Scalar[] a, Scalar[] b)
+    {
+        assert a.length == b.length;
+
+        Scalar[] result = new Scalar[a.length];
+        for (int i = 0; i < a.length; i++)
+        {
+            result[i] = a[i].sub(b[i]);
         }
         return result;
     }
@@ -266,9 +280,6 @@ public class InnerProductArgument {
     }
 
 	public static void main(String[] args) {
-        // Number of bits in the range
-        N = 64;
-        logN = 6; // its log, manually
 
         // Set the curve base points
         G = Curve25519Point.G;
@@ -323,6 +334,7 @@ public class InnerProductArgument {
                 System.out.println("Test failed");
             else
                 System.out.println("Test succeeded");
+
         }
 	}
 
