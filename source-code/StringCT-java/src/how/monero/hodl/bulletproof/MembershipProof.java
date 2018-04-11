@@ -3,6 +3,7 @@ package how.monero.hodl.bulletproof;
 import how.monero.hodl.crypto.Curve25519Point;
 import how.monero.hodl.crypto.Scalar;
 
+import static how.monero.hodl.crypto.CryptoUtil.getHpnGLookup;
 import static how.monero.hodl.crypto.CryptoUtil.hashToScalar;
 import static how.monero.hodl.crypto.Scalar.randomScalar;
 import static how.monero.hodl.util.ByteUtil.concat;
@@ -23,11 +24,17 @@ public class MembershipProof {
     
     static {
     	ones = new Scalar[N];
+    	zeros = new Scalar[N];
     	for(int i = 0; i < N; i++) {
     		ones[i] = Scalar.ONE;
     		zeros[i] = Scalar.ZERO;
     	}
     	scalarN = Scalar.intToScalar(N);
+        Hi = new Curve25519Point[N];
+        for (int i = 0; i < N; i++)
+        {
+            Hi[i] = getHpnGLookup(2*i+1);
+        }
     }
     
     public static class ProofTuple {
@@ -176,8 +183,13 @@ public class MembershipProof {
         Scalar y = H2(data);
         Scalar z = H3(data);
         Scalar w = H4(data);
-        Scalar t1 = Scalar.ZERO; // TODO: Compute t1
-        Scalar t2 = Scalar.ZERO; // TODO: Compute t2
+        Scalar[] yn = ScalarPowerVector(y);
+        Scalar t1 = InnerProductArgument.InnerProduct(InnerProductArgument.Hadamard(sR,yn),bL)
+        		.sub(InnerProductArgument.InnerProduct(sR,yn).mul(z))
+        		.add(InnerProductArgument.InnerProduct(InnerProductArgument.Hadamard(sL,yn),bL))
+        		.add(InnerProductArgument.InnerProduct(sL,yn).mul(w).mul(z.sub(Scalar.ONE)))
+        		.add(InnerProductArgument.InnerProduct(sL,ones).mul(z.sq()));
+        Scalar t2 = InnerProductArgument.InnerProduct(InnerProductArgument.Hadamard(sR,yn),sL);
         seed = hashToScalar(seed.bytes);
         Scalar tau1 = seed;
         seed = hashToScalar(seed.bytes);
@@ -192,7 +204,7 @@ public class MembershipProof {
         Scalar[] l = InnerProductArgument.VectorAdd(InnerProductArgument.VectorSubtract(
         		bL, InnerProductArgument.VectorScalar(ones, z)),InnerProductArgument.VectorScalar(sL,x));
         Scalar[] r = InnerProductArgument.VectorAdd(
-        		InnerProductArgument.Hadamard(ScalarPowerVector(y), InnerProductArgument.VectorAdd(
+        		InnerProductArgument.Hadamard(yn, InnerProductArgument.VectorAdd(
         		InnerProductArgument.VectorAdd(InnerProductArgument.VectorScalar(bR,w),
         		InnerProductArgument.VectorScalar(ones,w.mul(z))),
         		InnerProductArgument.VectorScalar(sR,x))),
@@ -243,11 +255,9 @@ public class MembershipProof {
     }
 
 	public static void main(String[] args) {
-
         // Set the curve base points
         G = Curve25519Point.G;
         H = Curve25519Point.hashToPoint(G);
-        Hi = new Curve25519Point[N];
         
         Random rando = new Random();
 
@@ -255,7 +265,7 @@ public class MembershipProof {
         for (int count = 0; count < TRIALS; count++)
         {
         	// PKGen
-        	int istar = rando.nextInt() % N;
+        	int istar = rando.nextInt(N);
         	Yi = new Curve25519Point[N];
         	Scalar sk = randomScalar();
             for (int i = 0; i < N; i++)
@@ -272,7 +282,7 @@ public class MembershipProof {
         for (int count = 0; count < TRIALS; count++)
         {
         	// PKGen
-        	int istar = rando.nextInt() % N;
+        	int istar = rando.nextInt(N);
         	Yi = new Curve25519Point[N];
         	Scalar sk = randomScalar();
             for (int i = 0; i < N; i++)
