@@ -282,15 +282,15 @@ public class InnerProductArgument {
     	return true;
     }
     
-    public static InnerProductProofTuple PROVE(Scalar[] a, Scalar[] b, Scalar seed) {
+    public static InnerProductProofTuple PROVE(Scalar[] a, Scalar[] b, Curve25519Point[] Gprime, Curve25519Point[] Hprime, Scalar seed) {
     	Scalar x = hashToScalar(concat(seed.bytes,U.toBytes()));
-    	return InnerProductProve(a,b,Gi,Hi,U.scalarMultiply(x),seed);
+    	return InnerProductProve(a,b,Gprime,Hprime,U.scalarMultiply(x),seed);
     }
     
-    public static boolean VERIFY(InnerProductProofTuple proof, Curve25519Point P, Scalar c, Scalar seed) {
+    public static boolean VERIFY(InnerProductProofTuple proof, Curve25519Point P, Curve25519Point[] Gprime, Curve25519Point[] Hprime, Scalar c, Scalar seed) {
     	Scalar x = hashToScalar(concat(seed.bytes,U.toBytes()));
         P = P.add(U.scalarMultiply(c.mul(x)));
-    	return InnerProductVerify(proof,P,Gi,Hi,U.scalarMultiply(x),seed);
+    	return InnerProductVerify(proof,P,Gprime,Hprime,U.scalarMultiply(x),seed);
     }
 
 	public static void main(String[] args) {
@@ -332,8 +332,8 @@ public class InnerProductArgument {
             P = VectorExponentCustom(Gi,Hi,a,b);
             Scalar c = InnerProduct(a,b);
 
-            InnerProductProofTuple proof = PROVE(a,b,seed);
-            if (!VERIFY(proof,P,c,seed))
+            InnerProductProofTuple proof = PROVE(a,b,Gi,Hi,seed);
+            if (!VERIFY(proof,P,Gi,Hi,c,seed))
                 System.out.println("Test failed");
             else
                 System.out.println("Test succeeded");
