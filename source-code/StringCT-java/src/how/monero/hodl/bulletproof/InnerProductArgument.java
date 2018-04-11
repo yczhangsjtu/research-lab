@@ -17,6 +17,20 @@ public class InnerProductArgument {
     private static Curve25519Point[] Gi;
     private static Curve25519Point[] Hi;
     
+    static {
+        // Set the curve base points
+        G = Curve25519Point.G;
+        H = Curve25519Point.hashToPoint(G);
+        U = Curve25519Point.hashToPoint(H);
+        Gi = new Curve25519Point[N];
+        Hi = new Curve25519Point[N];
+        for (int i = 0; i < N; i++)
+        {
+            Gi[i] = getHpnGLookup(2*i);
+            Hi[i] = getHpnGLookup(2*i+1);
+        }
+    }
+    
     public static class InnerProductProofTuple {
         private Curve25519Point[] L;
         private Curve25519Point[] R;
@@ -268,32 +282,21 @@ public class InnerProductArgument {
     	return true;
     }
     
-    public static InnerProductProofTuple PROVE(Scalar[] a, Scalar[] b, Curve25519Point[] Gprime, Curve25519Point[] Hprime, Scalar seed) {
+    public static InnerProductProofTuple PROVE(Scalar[] a, Scalar[] b, Scalar seed) {
     	Scalar x = hashToScalar(concat(seed.bytes,U.toBytes()));
-    	return InnerProductProve(a,b,Gprime,Hprime,U.scalarMultiply(x),seed);
+    	return InnerProductProve(a,b,Gi,Hi,U.scalarMultiply(x),seed);
     }
     
-    public static boolean VERIFY(InnerProductProofTuple proof, Curve25519Point P, Scalar c, Curve25519Point[] Gprime, Curve25519Point[] Hprime, Scalar seed) {
+    public static boolean VERIFY(InnerProductProofTuple proof, Curve25519Point P, Scalar c, Scalar seed) {
     	Scalar x = hashToScalar(concat(seed.bytes,U.toBytes()));
         P = P.add(U.scalarMultiply(c.mul(x)));
-    	return InnerProductVerify(proof,P,Gprime,Hprime,U.scalarMultiply(x),seed);
+    	return InnerProductVerify(proof,P,Gi,Hi,U.scalarMultiply(x),seed);
     }
 
 	public static void main(String[] args) {
 
-        // Set the curve base points
-        G = Curve25519Point.G;
-        H = Curve25519Point.hashToPoint(G);
-        U = Curve25519Point.hashToPoint(H);
-        Gi = new Curve25519Point[N];
-        Hi = new Curve25519Point[N];
 		Scalar[] a = new Scalar[N];
 		Scalar[] b = new Scalar[N];
-        for (int i = 0; i < N; i++)
-        {
-            Gi[i] = getHpnGLookup(2*i);
-            Hi[i] = getHpnGLookup(2*i+1);
-        }
         // Run a bunch of randomized trials
         int TRIALS = 10;
         
@@ -329,8 +332,8 @@ public class InnerProductArgument {
             P = VectorExponentCustom(Gi,Hi,a,b);
             Scalar c = InnerProduct(a,b);
 
-            InnerProductProofTuple proof = PROVE(a,b,Gi,Hi,seed);
-            if (!VERIFY(proof,P,c,Gi,Hi,seed))
+            InnerProductProofTuple proof = PROVE(a,b,seed);
+            if (!VERIFY(proof,P,c,seed))
                 System.out.println("Test failed");
             else
                 System.out.println("Test succeeded");

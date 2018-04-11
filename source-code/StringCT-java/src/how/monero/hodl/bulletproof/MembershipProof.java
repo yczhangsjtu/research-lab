@@ -13,7 +13,6 @@ public class MembershipProof {
 	
     private static int N = 64;
     private static Scalar scalarN;
-    private static int logN = 6;
 
     private static Curve25519Point G;
     private static Curve25519Point H;
@@ -44,12 +43,9 @@ public class MembershipProof {
     	Scalar zalpha;
     	Scalar zsk;
     	
-    	Scalar[] l;
-    	Scalar[] r;
     	Scalar t;
 		public ProofTuple(Curve25519Point a1, Curve25519Point a2, Curve25519Point s1, Curve25519Point s2,
-				Curve25519Point t1, Curve25519Point t2, Scalar taux, Scalar mu, Scalar zalpha, Scalar zsk,
-				Scalar[] l, Scalar[] r, Scalar t) {
+				Curve25519Point t1, Curve25519Point t2, Scalar taux, Scalar mu, Scalar zalpha, Scalar zsk, Scalar t) {
 			this.A1 = a1;
 			this.A2 = a2;
 			this.S1 = s1;
@@ -60,11 +56,54 @@ public class MembershipProof {
 			this.mu = mu;
 			this.zalpha = zalpha;
 			this.zsk = zsk;
-			this.l = l;
-			this.r = r;
 			this.t = t;
 		}
+		
+		public Scalar hash() {
+			Scalar seed = hashToScalar(concat(this.A1.toBytes(),this.A2.toBytes()));
+			seed = hashToScalar(concat(seed.bytes,this.A2.toBytes()));
+			seed = hashToScalar(concat(seed.bytes,this.S1.toBytes()));
+			seed = hashToScalar(concat(seed.bytes,this.S2.toBytes()));
+			seed = hashToScalar(concat(seed.bytes,this.T1.toBytes()));
+			seed = hashToScalar(concat(seed.bytes,this.T2.toBytes()));
+			seed = hashToScalar(concat(seed.bytes,this.taux.bytes));
+			seed = hashToScalar(concat(seed.bytes,this.mu.bytes));
+			seed = hashToScalar(concat(seed.bytes,this.zalpha.bytes));
+			seed = hashToScalar(concat(seed.bytes,this.zsk.bytes));
+			seed = hashToScalar(concat(seed.bytes,this.t.bytes));
+			return seed;
+		}
+    }
+    
+    public static class LinearProofTuple extends ProofTuple {
+    	Scalar[] l;
+    	Scalar[] r;
+    	public LinearProofTuple(Curve25519Point a1, Curve25519Point a2, Curve25519Point s1, Curve25519Point s2,
+				Curve25519Point t1, Curve25519Point t2, Scalar taux, Scalar mu, Scalar zalpha, Scalar zsk,
+				Scalar[] l, Scalar[] r, Scalar t) {
+			super(a1,a2,s1,s2,t1,t2,taux,mu,zalpha,zsk,t);
+    		this.l = l;
+    		this.r = r;
+    	}
+    }
+    
+    public static class CompressedProofTuple extends ProofTuple {
+    	InnerProductArgument.InnerProductProofTuple innerProductProof;
     	
+		public CompressedProofTuple(Curve25519Point a1, Curve25519Point a2, Curve25519Point s1, Curve25519Point s2,
+				Curve25519Point t1, Curve25519Point t2, Scalar taux, Scalar mu, Scalar zalpha, Scalar zsk,
+				InnerProductArgument.InnerProductProofTuple innerProductProof, Scalar t) {
+			super(a1,a2,s1,s2,t1,t2,taux,mu,zalpha,zsk,t);
+			this.innerProductProof = innerProductProof;
+		}
+		
+		public static CompressedProofTuple compress(LinearProofTuple proof) {
+			Scalar seed = proof.hash();
+			InnerProductArgument.InnerProductProofTuple proofTuple = InnerProductArgument.PROVE(proof.l, proof.r, seed);
+			return new CompressedProofTuple(
+					proof.A1, proof.A2, proof.S1, proof.S2, proof.T1, proof.T2,
+					proof.taux, proof.mu, proof.zalpha, proof.zsk, proofTuple, proof.t);
+		}
     }
     
     /* Compute a custom vector-scalar commitment */
@@ -101,7 +140,7 @@ public class MembershipProof {
     	return ret;
     }
     
-    public static ProofTuple PROVE(Curve25519Point[] Yi, int istar, Scalar sk) {
+    public static LinearProofTuple PROVE(Curve25519Point[] Yi, int istar, Scalar sk) {
     	Scalar seed = randomScalar();
         // 1. Prepare Index
         Scalar[] bL = InnerProductArgument.VectorScalar(ones, Scalar.ZERO);
@@ -159,7 +198,7 @@ public class MembershipProof {
         		InnerProductArgument.VectorScalar(sR,x))),
         		InnerProductArgument.VectorScalar(ones,z.sq()));
         Scalar t = InnerProductArgument.InnerProduct(l, r);
-        return new ProofTuple(A1,A2,S1,S2,T1,T2,taux,mu,zalpha,zsk,l,r,t);
+        return new LinearProofTuple(A1,A2,S1,S2,T1,T2,taux,mu,zalpha,zsk,l,r,t);
     }
     
     public static boolean VERIFY(ProofTuple proof, Curve25519Point[] Yi) {
@@ -174,19 +213,32 @@ public class MembershipProof {
         for(int i = 0; i < N; i++)
         	hprime[i] = Hi[i].scalarMultiply(y.pow(-i));
         
-    	if(!proof.t.equals(InnerProductArgument.InnerProduct(proof.l, proof.r)))
-    		return false;
     	if(!G.scalarMultiply(proof.t).add(H.scalarMultiply(proof.taux)).equals(
     			G.scalarMultiply(proof.zalpha.sq().add(w.mul(z.sub(z.sq())).mul(InnerProductArgument.InnerProduct(
     					ones,ScalarPowerVector(y)))).sub(z.pow(3).mul(scalarN))).add(
     					proof.T1.scalarMultiply(x)).add(proof.T2.scalarMultiply(x.sq()))))
     		return false;
-    	if(!H.scalarMultiply(proof.mu).add(InnerProductArgument.VectorExponentCustom(Yi,hprime,proof.l,proof.r)).equals(
-    			proof.A1.add(proof.A2.scalarMultiply(w)).add(proof.S2.scalarMultiply(x)).add(InnerProductArgument.VectorExponentCustom(
-    					Yi,hprime,InnerProductArgument.VectorScalar(ones,Scalar.ZERO.sub(z)),
-    					InnerProductArgument.VectorAdd(InnerProductArgument.VectorScalar(ScalarPowerVector(y),w.mul(z)),
-    							InnerProductArgument.VectorScalar(ones,z.sq()))))))
+    	if(!H.scalarMultiply(proof.zalpha).add(G.scalarMultiply(proof.zsk)).equals(proof.S1.add(proof.A1.scalarMultiply(x))))
     		return false;
+    	
+    	Curve25519Point P = H.scalarMultiply(Scalar.ZERO.sub(proof.mu)).add(proof.A1).add(proof.A2.scalarMultiply(w)).add(proof.S2.scalarMultiply(x)).add(
+				InnerProductArgument.VectorExponentCustom(Yi,hprime,InnerProductArgument.VectorScalar(ones,Scalar.ZERO.sub(z)),
+				InnerProductArgument.VectorAdd(InnerProductArgument.VectorScalar(ScalarPowerVector(y),w.mul(z)),
+				InnerProductArgument.VectorScalar(ones,z.sq()))));
+    	
+    	if(proof instanceof LinearProofTuple) {
+    		LinearProofTuple pi = (LinearProofTuple) proof;
+	    	if(!proof.t.equals(InnerProductArgument.InnerProduct(pi.l, pi.r)))
+	    		return false;
+	    	if(!InnerProductArgument.VectorExponentCustom(Yi,hprime,pi.l,pi.r).equals(P))
+	    		return false;
+    	} else if(proof instanceof CompressedProofTuple) {
+    		CompressedProofTuple pi = (CompressedProofTuple) proof;
+    		Scalar seed = pi.hash();
+    		if(!InnerProductArgument.VERIFY(pi.innerProductProof, P, proof.t, seed))
+    			return false;
+    	} else return false;
+    	
     	return true;
     }
 
@@ -202,7 +254,6 @@ public class MembershipProof {
         int TRIALS = 10;
         for (int count = 0; count < TRIALS; count++)
         {
-            Scalar seed = randomScalar();
         	// PKGen
         	int istar = rando.nextInt() % N;
         	Yi = new Curve25519Point[N];
@@ -210,10 +261,26 @@ public class MembershipProof {
             for (int i = 0; i < N; i++)
             	Yi[i] = G.scalarMultiply(randomScalar());
             Yi[istar] = G.scalarMultiply(sk);
-            Curve25519Point sigma = Yi[istar];
 
             // Proof
             ProofTuple proof = PROVE(Yi,istar,sk);
+            if (!VERIFY(proof,Yi))
+                System.out.println("Test failed");
+            else
+                System.out.println("Test succeeded");
+        }
+        for (int count = 0; count < TRIALS; count++)
+        {
+        	// PKGen
+        	int istar = rando.nextInt() % N;
+        	Yi = new Curve25519Point[N];
+        	Scalar sk = randomScalar();
+            for (int i = 0; i < N; i++)
+            	Yi[i] = G.scalarMultiply(randomScalar());
+            Yi[istar] = G.scalarMultiply(sk);
+
+            // Proof
+            CompressedProofTuple proof = CompressedProofTuple.compress(PROVE(Yi,istar,sk));
             if (!VERIFY(proof,Yi))
                 System.out.println("Test failed");
             else
