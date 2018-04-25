@@ -13,7 +13,7 @@ import java.util.Random;
 
 public class MembershipProof {
 	
-    private static int N = 64;
+    private static int N = 128;
     private static Scalar scalarN;
 
     private static Curve25519Point G;
@@ -69,7 +69,6 @@ public class MembershipProof {
 		
 		public Scalar hash() {
 			Scalar seed = hashToScalar(concat(this.A1.toBytes(),this.A2.toBytes()));
-			seed = hashToScalar(concat(seed.bytes,this.A2.toBytes()));
 			seed = hashToScalar(concat(seed.bytes,this.S1.toBytes()));
 			seed = hashToScalar(concat(seed.bytes,this.S2.toBytes()));
 			seed = hashToScalar(concat(seed.bytes,this.T1.toBytes()));
@@ -80,6 +79,12 @@ public class MembershipProof {
 			seed = hashToScalar(concat(seed.bytes,this.zsk.bytes));
 			seed = hashToScalar(concat(seed.bytes,this.t.bytes));
 			return seed;
+		}
+		
+		public int size() {
+			return this.A1.toBytes().length + this.A2.toBytes().length + this.S1.toBytes().length + this.S2.toBytes().length
+					+ this.T1.toBytes().length + this.T2.toBytes().length + this.taux.bytes.length + this.mu.bytes.length
+					+ this.zalpha.bytes.length + this.zsk.bytes.length + this.t.bytes.length;
 		}
     }
     
@@ -93,6 +98,15 @@ public class MembershipProof {
     		this.l = l;
     		this.r = r;
     	}
+    	
+    	public int size() {
+    		int ret = super.size();
+    		for(int i = 0; i < l.length; i++)
+    			ret += l[i].bytes.length;
+    		for(int i = 0; i < r.length; i++)
+    			ret += r[i].bytes.length;
+    		return ret;
+    	}
     }
     
     public static class CompressedProofTuple extends ProofTuple {
@@ -103,6 +117,10 @@ public class MembershipProof {
 				InnerProductArgument.InnerProductProofTuple innerProductProof, Scalar t) {
 			super(a1,a2,s1,s2,t1,t2,taux,mu,zalpha,zsk,t);
 			this.innerProductProof = innerProductProof;
+		}
+		
+		public int size() {
+			return super.size() + innerProductProof.size();
 		}
 		
     }
@@ -288,7 +306,7 @@ public class MembershipProof {
         
         Random rando = new Random();
 
-        int TRIALS = 10;
+        int TRIALS = 15;
         for (int count = 0; count < TRIALS; count++)
         {
         	// PKGen
@@ -300,11 +318,17 @@ public class MembershipProof {
             Yi[istar] = G.scalarMultiply(sk);
 
             // Proof
-            ProofTuple proof = PROVE(Yi,istar,sk,true);
+            long t = System.nanoTime();
+            LinearProofTuple proof = (LinearProofTuple)PROVE(Yi,istar,sk,false);
+            long proveTime = System.nanoTime()-t;
+            
+            t = System.nanoTime();
             if (!VERIFY(proof,Yi))
                 System.out.println("Test failed");
-            else
-                System.out.println("Test succeeded");
+            else {
+            	if(count >= 5)
+            		System.out.printf("%d,%d,%d\n", proof.size(),proveTime,System.nanoTime()-t);
+            }
         }
         for (int count = 0; count < TRIALS; count++)
         {
@@ -317,11 +341,17 @@ public class MembershipProof {
             Yi[istar] = G.scalarMultiply(sk);
 
             // Proof
-            ProofTuple proof = PROVE(Yi,istar,sk,true);
+            long t = System.nanoTime();
+            CompressedProofTuple proof = (CompressedProofTuple)PROVE(Yi,istar,sk,true);
+            long proveTime = System.nanoTime()-t;
+
+            t = System.nanoTime();
             if (!VERIFY(proof,Yi))
                 System.out.println("Test failed");
-            else
-                System.out.println("Test succeeded");
+            else {
+            	if(count >= 5)
+            		System.out.printf("%d,%d,%d\n", proof.size(),proveTime,System.nanoTime()-t);
+            }
         }
 	}
 

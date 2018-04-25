@@ -9,8 +9,8 @@ import static how.monero.hodl.crypto.CryptoUtil.*;
 import static how.monero.hodl.util.ByteUtil.*;
 
 public class InnerProductArgument {
-    private static int N = 64;
-    private static int logN = 6;
+    private static int N = 128;
+    private static int logN = 7;
     private static Curve25519Point G;
     private static Curve25519Point H;
     private static Curve25519Point U;
@@ -43,6 +43,17 @@ public class InnerProductArgument {
             this.a = a;
             this.b = b;
     	}
+
+		public int size() {
+			int ret = 0;
+			for(int i = 0; i < L.length; i++)
+				ret += L[i].toBytes().length;
+			for(int i = 0; i < R.length; i++)
+				ret += R[i].toBytes().length;
+			ret += this.a.bytes.length;
+			ret += this.b.bytes.length;
+			return ret;
+		}
     }
     
     /* Given two scalar arrays, construct a vector commitment */
