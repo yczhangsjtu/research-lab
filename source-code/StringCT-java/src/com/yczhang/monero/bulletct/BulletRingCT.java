@@ -92,7 +92,10 @@ public class BulletRingCT {
 		for(int i = 0; i < M; i++) sktilde = sktilde.add(sp.sk[i].sk).add(sp.sk[i].r);
 		sktilde = sktilde.sub(routsum);
 		
-		Scalar seed = hashToScalar(sktilde.bytes);
+		Scalar seed = Scalar.ZERO;
+		for(int i = 0; i < I; i++)
+			seed = hashToScalar(concat(seed.bytes,pktilde[i].toBytes()));
+		
 		Scalar rsk = hashToScalar(seed.bytes);
 		Curve25519Point S3 = u.scalarMultiply(rsk);
 		
@@ -141,7 +144,62 @@ public class BulletRingCT {
 		return new SpendSignature(sigma, pi, S3, U, AR);
 	}
 	
-	public static boolean VER(Curve25519Point[] ki, Curve25519PointPair[][] pk, Curve25519Point[] co, Curve25519Point co1, byte[] M, SpendSignature spendSignature) {
+	public static boolean VERIFY(Curve25519Point[] ki, Curve25519PointPair[][] pk, Curve25519Point[] co, Curve25519Point co1, SpendSignature spendSignature) {
+		Curve25519Point G = Curve25519Point.G;
+		Curve25519Point H = Curve25519Point.hashToPoint(G);
+		Curve25519Point u = Curve25519Point.hashToPoint(H);
+		
+		// 1. Check the serial numbers for double spending
+		// TODO: Neglected for now
+		
+		// 2. Compute pktilde and v, Y
+		int I = pk[0].length, M = pk.length, m = spendSignature.AR.length;
+		Curve25519Point[] pktilde = new Curve25519Point[I];
+		Curve25519Point Coutsum = Curve25519Point.ZERO;
+		for(int i = 0; i < I; i++) {
+			pktilde[i] = Curve25519Point.ZERO;
+			for(int k = 0; k < M; k++) pktilde[i] = pktilde[i].add(pk[k][i].P1).add(pk[k][i].P2);
+			pktilde[i] = pktilde[i].subtract(Coutsum);
+		}
+		
+		Scalar seed = Scalar.ZERO;
+		for(int i = 0; i < I; i++)
+			seed = hashToScalar(concat(seed.bytes,pktilde[i].toBytes()));
+		Scalar rsk = hashToScalar(seed.bytes);
+		Curve25519Point S3 = u.scalarMultiply(rsk);
+		
+		byte[] AARS3 = new byte[] {};
+		for(int i = 0; i < M; i++)
+			for(int j = 0; j < I; j++)
+				AARS3 = concat(AARS3,pk[i][j].toBytes());
+		for(int i = 0; i < m; i++)
+			AARS3 = concat(AARS3, spendSignature.AR[i].toBytes());
+		AARS3 = concat(AARS3, S3.toBytes());
+		Scalar v = H5(AARS3);
+		
+		Curve25519Point[] Y = new Curve25519Point[I];
+		for(int i = 0; i < I; i++) {
+			Scalar vk = Scalar.ONE;
+			Y[i] = Curve25519Point.ZERO;
+			for(int j = 0; j < M; j++) {
+				Y[i] = Y[i].add(pk[j][i].P1.scalarMultiply(vk));
+				vk = vk.mul(v);
+			}
+			Y[i] = Y[i].add(pktilde[i].scalarMultiply(vk));
+		}
+		
+		// 3. Verify sigma and pi
+		byte[] text = v.bytes;
+		for(int i = 0; i < spendSignature.U.length; i++)
+			text = concat(text,spendSignature.U[i].toBytes());
+		if(!MembershipProof.VERIFY(spendSignature.sigma, Y, text, S3)) {
+			System.out.println("Failed in the membership proof part!");
+			return false;
+		}
+		for(int i = 0; i < m; i++) {
+			OptimizedLogBulletproof.VERIFY(spendSignature.pi[i]);
+		}
+		
 		return true;
 	}
 }
