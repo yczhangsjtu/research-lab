@@ -20,6 +20,11 @@ public class OptimizedLogBulletproof
     private static Curve25519Point H;
     private static Curve25519Point[] Gi;
     private static Curve25519Point[] Hi;
+    
+    static {
+    	N = 64;
+    	logN = 6;
+    }
 
     public static class ProofTuple
     {
@@ -523,10 +528,6 @@ public class OptimizedLogBulletproof
 
     public static void main(String[] args)
     {
-        // Number of bits in the range
-        N = 64;
-        logN = 6; // its log, manually
-
         // Set the curve base points
         G = Curve25519Point.G;
         H = Curve25519Point.hashToPoint(G);

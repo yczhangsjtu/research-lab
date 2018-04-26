@@ -12,6 +12,9 @@ import how.monero.hodl.ringSignature.StringCT.SpendSignature;
 
 import static how.monero.hodl.ringSignature.StringCT.KEYGEN;
 import static how.monero.hodl.crypto.Scalar.randomScalar;
+import static how.monero.hodl.crypto.CryptoUtil.hashToScalar;
+import static how.monero.hodl.bulletproof.MembershipProof.H5;
+import static how.monero.hodl.util.ByteUtil.concat;
 
 public class BulletRingCT {
 	public static class SK {
@@ -33,11 +36,11 @@ public class BulletRingCT {
 	
 	public static class SpendSignature {
 		public MembershipProof.ProofTuple sigma;
-		public OptimizedLogBulletproof.ProofTuple pi;
+		public OptimizedLogBulletproof.ProofTuple[] pi;
 		public Curve25519Point S3;
 		public Curve25519Point[] U;
 		public Curve25519PointPair[] AR;
-		public SpendSignature(MembershipProof.ProofTuple sigma, OptimizedLogBulletproof.ProofTuple pi,
+		public SpendSignature(MembershipProof.ProofTuple sigma, OptimizedLogBulletproof.ProofTuple[] pi,
 				Curve25519Point s3, Curve25519Point[] u, Curve25519PointPair[] ar) {
 			this.sigma = sigma;
 			this.pi = pi;
@@ -50,6 +53,7 @@ public class BulletRingCT {
 	public static SpendSignature SPEND(SpendParams sp) {
 		Curve25519Point G = Curve25519Point.G;
 		Curve25519Point H = Curve25519Point.hashToPoint(G);
+		Curve25519Point u = Curve25519Point.hashToPoint(H);
 		
 		// 1.a Check the balance
 		Scalar left = Scalar.ZERO, right = Scalar.ZERO;
@@ -87,5 +91,57 @@ public class BulletRingCT {
 		Scalar sktilde = Scalar.ZERO;
 		for(int i = 0; i < M; i++) sktilde = sktilde.add(sp.sk[i].sk).add(sp.sk[i].r);
 		sktilde = sktilde.sub(routsum);
+		
+		Scalar seed = hashToScalar(sktilde.bytes);
+		Scalar rsk = hashToScalar(seed.bytes);
+		Curve25519Point S3 = u.scalarMultiply(rsk);
+		
+		// 3. Generate key images
+		Curve25519Point[] U = new Curve25519Point[M+1];
+		for(int i = 0; i < M; i++)
+			U[i] = u.scalarMultiply(sp.sk[i].sk);
+		U[M] = u.scalarMultiply(sktilde);
+		byte[] AARS3 = new byte[] {};
+		for(int i = 0; i < M; i++)
+			for(int j = 0; j < I; j++)
+				AARS3 = concat(AARS3,sp.pk[i][j].toBytes());
+		for(int i = 0; i < m; i++)
+			AARS3 = concat(AARS3, AR[i].toBytes());
+		AARS3 = concat(AARS3, S3.toBytes());
+		Scalar v = H5(AARS3);
+		Curve25519Point[] Y = new Curve25519Point[I];
+		
+		for(int i = 0; i < I; i++) {
+			Scalar vk = Scalar.ONE;
+			Y[i] = Curve25519Point.ZERO;
+			for(int j = 0; j < M; j++) {
+				Y[i] = Y[i].add(sp.pk[j][i].P1.scalarMultiply(vk));
+				vk = vk.mul(v);
+			}
+			Y[i] = Y[i].add(pktilde[i].scalarMultiply(vk));
+		}
+
+		Scalar vk = Scalar.ONE;
+		Scalar skstar = Scalar.ZERO;
+		for(int k = 0; k < M; k++) {
+			skstar = skstar.add(sp.sk[k].sk.mul(vk));
+			vk = vk.mul(v);
+		}
+		skstar = skstar.add(sktilde.mul(vk));
+		
+		// 4. Generate ring signature
+		byte[] text = v.bytes;
+		for(int i = 0; i < U.length; i++)
+			text = concat(text,U[i].toBytes());
+		MembershipProof.ProofTuple sigma = MembershipProof.PROVE(Y, sp.iAsterisk, skstar, true, seed, text, S3);
+		OptimizedLogBulletproof.ProofTuple[] pi = new OptimizedLogBulletproof.ProofTuple[m];
+		for(int i = 0; i < m; i++)
+			pi[i] = OptimizedLogBulletproof.PROVE(sp.output[i], rout[i]);
+		
+		return new SpendSignature(sigma, pi, S3, U, AR);
+	}
+	
+	public static boolean VER(Curve25519Point[] ki, Curve25519PointPair[][] pk, Curve25519Point[] co, Curve25519Point co1, byte[] M, SpendSignature spendSignature) {
+		return true;
 	}
 }

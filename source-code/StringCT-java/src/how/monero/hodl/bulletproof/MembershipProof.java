@@ -139,16 +139,19 @@ public class MembershipProof {
     }
     
     public static Scalar H1(byte[] data) {
-    	return hashToScalar(concat(data,Scalar.ONE.bytes));
+    	return hashToScalar(concat(data,(new byte[] {1})));
     }
     public static Scalar H2(byte[] data) {
-    	return hashToScalar(concat(data,Scalar.TWO.bytes));
+    	return hashToScalar(concat(data,(new byte[] {2})));
     }
     public static Scalar H3(byte[] data) {
-    	return hashToScalar(concat(data,Scalar.ZERO.bytes));
+    	return hashToScalar(concat(data,(new byte[] {3})));
     }
     public static Scalar H4(byte[] data) {
-    	return hashToScalar(concat(data,Scalar.MINUS_ONE.bytes));
+    	return hashToScalar(concat(data,(new byte[] {4})));
+    }
+    public static Scalar H5(byte[] data) {
+    	return hashToScalar(concat(data,(new byte[] {5})));
     }
     
     public static Scalar[] ScalarPowerVector(Scalar x) {
@@ -159,7 +162,7 @@ public class MembershipProof {
     	return ret;
     }
     
-    public static ProofTuple PROVE(Curve25519Point[] Yi, int istar, Scalar sk, boolean compressed) {
+    public static ProofTuple PROVE(Curve25519Point[] Yi, int istar, Scalar sk, boolean compressed, Scalar seed, byte[] text, Curve25519Point S3) {
         // 1. Prepare Index
         Scalar[] bL = InnerProductArgument.VectorScalar(zeros, Scalar.ZERO);
         bL[istar] = Scalar.ONE;
@@ -170,7 +173,7 @@ public class MembershipProof {
         Scalar beta = randomScalar();
         Scalar rho = randomScalar();
         Scalar ralpha = randomScalar();
-        Scalar rsk = randomScalar();
+        Scalar rsk = hashToScalar(seed.bytes);
         
         Scalar[] sL = new Scalar[N];
         Scalar[] sR = new Scalar[N];
@@ -189,7 +192,7 @@ public class MembershipProof {
         data = concat(data,S1.toBytes());
         data = concat(data,S2.toBytes());
         for(int i = 0; i < Yi.length; i++)
-        	data = concat(data,Yi[i].toBytes());
+        	data = concat(concat(data,Yi[i].toBytes()),S3.toBytes());
         
         // Commit 2
         Scalar y = H2(data);
@@ -209,7 +212,7 @@ public class MembershipProof {
         Curve25519Point T2 = G.scalarMultiply(t2).add(H.scalarMultiply(tau2));
         
         // Challenge 2
-        Scalar x = H1(concat(concat(concat(concat(w.bytes,y.bytes),z.bytes),T1.toBytes()),T2.toBytes()));
+        Scalar x = H1(concat(concat(concat(concat(concat(w.bytes,y.bytes),z.bytes),T1.toBytes()),T2.toBytes()),text));
         
         // Response
         Scalar taux = tau1.mul(x).add(tau2.mul(x.sq()));
@@ -232,30 +235,30 @@ public class MembershipProof {
         
         if(compressed) {
         	CompressedProofTuple proof = new CompressedProofTuple(A1,A2,S1,S2,T1,T2,taux,mu,zalpha,zsk,null,t);
-			Scalar seed = proof.hash();
+			Scalar seed1 = proof.hash();
 	        Curve25519Point[] hprime = new Curve25519Point[N];
 	        Scalar yinv = new Scalar(y.toBigInteger().modInverse(l));
 	        for(int i = 0; i < N; i++)
 	        	hprime[i] = Hi[i].scalarMultiply(yinv.pow(i));
-			proof.innerProductProof = InnerProductArgument.PROVE(vl,vr,Yi,hprime,seed);
+			proof.innerProductProof = InnerProductArgument.PROVE(vl,vr,Yi,hprime,seed1);
 			return proof;
         }
 
         return new LinearProofTuple(A1,A2,S1,S2,T1,T2,taux,mu,zalpha,zsk,vl,vr,t);
     }
     
-    public static boolean VERIFY(ProofTuple proof, Curve25519Point[] Yi) {
+    public static boolean VERIFY(ProofTuple proof, Curve25519Point[] Yi, byte[] text, Curve25519Point S3) {
         byte[] data = proof.A1.toBytes();
         data = concat(data,proof.A2.toBytes());
         data = concat(data,proof.S1.toBytes());
         data = concat(data,proof.S2.toBytes());
         for(int i = 0; i < Yi.length; i++)
-        	data = concat(data,Yi[i].toBytes());
+        	data = concat(concat(data,Yi[i].toBytes()),S3.toBytes());
         
         Scalar y = H2(data);
         Scalar z = H3(data);
         Scalar w = H4(data);
-        Scalar x = H1(concat(concat(concat(concat(w.bytes,y.bytes),z.bytes),proof.T1.toBytes()),proof.T2.toBytes()));
+        Scalar x = H1(concat(concat(concat(concat(concat(w.bytes,y.bytes),z.bytes),proof.T1.toBytes()),proof.T2.toBytes()),text));
         Scalar yinv = new Scalar(y.toBigInteger().modInverse(l));
         
         Scalar[] yn = ScalarPowerVector(y);
@@ -303,8 +306,10 @@ public class MembershipProof {
         // Set the curve base points
         G = Curve25519Point.G;
         H = Curve25519Point.hashToPoint(G);
+        Curve25519Point S3 = Curve25519Point.hashToPoint(H);
         
         Random rando = new Random();
+        byte[] text = new byte[] {0,1,2,3,4,5,6,7};
 
         int TRIALS = 15;
         for (int count = 0; count < TRIALS; count++)
@@ -316,14 +321,15 @@ public class MembershipProof {
             for (int i = 0; i < N; i++)
             	Yi[i] = G.scalarMultiply(randomScalar());
             Yi[istar] = G.scalarMultiply(sk);
+            Scalar seed = randomScalar();
 
             // Proof
             long t = System.nanoTime();
-            LinearProofTuple proof = (LinearProofTuple)PROVE(Yi,istar,sk,false);
+            LinearProofTuple proof = (LinearProofTuple)PROVE(Yi,istar,sk,false,seed,text,S3);
             long proveTime = System.nanoTime()-t;
             
             t = System.nanoTime();
-            if (!VERIFY(proof,Yi))
+            if (!VERIFY(proof,Yi,text,S3))
                 System.out.println("Test failed");
             else {
             	if(count >= 5)
@@ -339,14 +345,15 @@ public class MembershipProof {
             for (int i = 0; i < N; i++)
             	Yi[i] = G.scalarMultiply(randomScalar());
             Yi[istar] = G.scalarMultiply(sk);
+            Scalar seed = randomScalar();
 
             // Proof
             long t = System.nanoTime();
-            CompressedProofTuple proof = (CompressedProofTuple)PROVE(Yi,istar,sk,true);
+            CompressedProofTuple proof = (CompressedProofTuple)PROVE(Yi,istar,sk,true,seed,text,S3);
             long proveTime = System.nanoTime()-t;
 
             t = System.nanoTime();
-            if (!VERIFY(proof,Yi))
+            if (!VERIFY(proof,Yi,text,S3))
                 System.out.println("Test failed");
             else {
             	if(count >= 5)
