@@ -10,7 +10,7 @@ import static how.monero.hodl.util.ByteUtil.*;
 
 public class InnerProductArgument {
     private static int N = 4;
-    private static int logN = 2;
+    private static int logN;
     private static Curve25519Point G;
     private static Curve25519Point H;
     private static Curve25519Point U;
@@ -24,7 +24,7 @@ public class InnerProductArgument {
         U = Curve25519Point.hashToPoint(H);
         Gi = new Curve25519Point[N];
         Hi = new Curve25519Point[N];
-        logN = (int)Math.round(Math.log(N));
+    	logN = (int)Math.round(Math.log(N)/Math.log(2));
         
         for (int i = 0; i < N; i++)
         {
@@ -66,6 +66,15 @@ public class InnerProductArgument {
 				ret += R[i].toBytes().length;
 			ret += this.a.bytes.length;
 			ret += this.b.bytes.length;
+			return ret;
+		}
+
+		public byte[] toBytes() {
+			byte[] ret = concat(this.a.bytes,this.b.bytes);
+			for(int i = 0; i < this.L.length; i++)
+				ret = concat(ret, this.L[i].toBytes());
+			for(int i = 0; i < this.R.length; i++)
+				ret = concat(ret, this.R[i].toBytes());
 			return ret;
 		}
     }

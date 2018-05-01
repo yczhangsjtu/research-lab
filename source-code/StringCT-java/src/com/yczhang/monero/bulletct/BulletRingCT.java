@@ -85,11 +85,11 @@ public class BulletRingCT {
 		}
 	    public byte[] toBytes() {
 	        byte[] result = sigma.toBytes();
-	        for(int i = 0; i < pi.length; i++)
-	        	result = concat(result, pi[i].toBytes());
+//	        for(int i = 0; i < pi.length; i++)
+//	        	result = concat(result, pi[i].toBytes());
 	        result = concat(result, S3.toBytes());
-	        for(int i = 0; i < U.length; i++)
-	        	result = concat(result, U[i].toBytes());
+//	        for(int i = 0; i < U.length; i++)
+//	        	result = concat(result, U[i].toBytes());
 	        return result;
 	    }
 	}

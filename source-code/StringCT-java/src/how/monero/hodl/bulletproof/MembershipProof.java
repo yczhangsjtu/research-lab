@@ -134,6 +134,15 @@ public class MembershipProof {
     			ret += r[i].bytes.length;
     		return ret;
     	}
+    	
+    	public byte[] toBytes() {
+    		byte[] ret = super.toBytes();
+    		for(int i = 0; i < l.length; i++)
+    			ret = concat(ret, l[i].bytes);
+    		for(int i = 0; i < r.length; i++)
+    			ret = concat(ret, r[i].bytes);
+    		return ret;
+    	}
     }
     
     public static class CompressedProofTuple extends ProofTuple {
@@ -148,6 +157,10 @@ public class MembershipProof {
 		
 		public int size() {
 			return super.size() + innerProductProof.size();
+		}
+		
+		public byte[] toBytes() {
+			return concat(super.toBytes(), innerProductProof.toBytes());
 		}
 		
     }
