@@ -22,8 +22,12 @@ public class OptimizedLogBulletproof
     private static Curve25519Point[] Hi;
     
     static {
-    	N = 64;
-    	logN = 6;
+    	initialize(64);
+    }
+    
+    public static void initialize(int n) {
+    	N = n;
+    	logN = (int)Math.round(Math.log(N)/Math.log(2));
         // Set the curve base points
         G = Curve25519Point.G;
         H = Curve25519Point.hashToPoint(G);
@@ -457,7 +461,7 @@ public class OptimizedLogBulletproof
         hashCache = hashToScalar(concat(hashCache.bytes,T1.toBytes()));
         hashCache = hashToScalar(concat(hashCache.bytes,T2.toBytes()));
         Scalar x = hashCache;
-        
+
         // PAPER LINES 52-53
         Scalar taux = Scalar.ZERO;
         taux = tau1.mul(x);

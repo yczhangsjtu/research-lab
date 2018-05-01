@@ -10,6 +10,7 @@ import com.yczhang.monero.bulletct.BulletRingCT.SpendSignature;
 
 import how.monero.hodl.bulletproof.InnerProductArgument;
 import how.monero.hodl.bulletproof.MembershipProof;
+import how.monero.hodl.bulletproof.OptimizedLogBulletproof;
 import how.monero.hodl.crypto.Curve25519Point;
 import how.monero.hodl.crypto.Curve25519PointPair;
 import how.monero.hodl.crypto.Scalar;
@@ -68,6 +69,7 @@ public class BulletRingCTSpendTest {
 	    		System.out.printf("Start testing for inputs = %d and ringSize = %d\n",inputs,ringSize);
 	    		MembershipProof.setN(ringSize);
 	    		InnerProductArgument.setN(ringSize);
+	    		OptimizedLogBulletproof.initialize(64);
 	    		
 	    		long startMs = new Date().getTime();
 	    		SpendParams[] sp = new SpendParams[testIterations];
@@ -86,9 +88,14 @@ public class BulletRingCTSpendTest {
 	    		for (int i=0; i<testIterations; i++) {
 	    			spendSignature[i] = SPEND(sp[i]);
 	    		}
-
 	    		long siggentime = new Date().getTime()-startMs;
 	    		System.out.println("Spend signature generation duration: " + siggentime + " ms");
+
+	    		int spendScalarMults = Curve25519Point.scalarMults;
+	    		int spendScalarBaseMults = Curve25519Point.scalarBaseMults;
+	    		System.out.println("Spend ScalarMults: " + Curve25519Point.scalarMults);
+	    		System.out.println("Spend BaseScalarMults: " + Curve25519Point.scalarBaseMults);
+	    		
 
 	    		byte[][] spendSignatureBytes = new byte[testIterations][];
 	    		for (int i=0; i<testIterations; i++) {
@@ -99,15 +106,8 @@ public class BulletRingCTSpendTest {
 	    		if(pauseAtEachStage) { System.out.println("Press enter to continue"); try { System.in.read(); } catch (Exception e) {}; System.out.println("Continuing..."); }
 	    		startMs = new Date().getTime();
 
-	    		int spendScalarMults = Curve25519Point.scalarMults;
-	    		int spendScalarBaseMults = Curve25519Point.scalarBaseMults;
-	    		System.out.println("Spend ScalarMults: " + Curve25519Point.scalarMults);
-	    		System.out.println("Spend BaseScalarMults: " + Curve25519Point.scalarBaseMults);
 	    		Curve25519Point.scalarMults = 0;
 	    		Curve25519Point.scalarBaseMults = 0;
-
-	    		//Ed25519GroupElement.enableLineRecording = true;
-	    		Curve25519Point.lineRecordingSourceFile = "StringCT.java";
 
 	    		// verify the spend transaction
 	    		for (int i=0; i<testIterations; i++) {
