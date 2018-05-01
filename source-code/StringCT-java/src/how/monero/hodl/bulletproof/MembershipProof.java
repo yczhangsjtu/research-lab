@@ -13,7 +13,7 @@ import java.util.Random;
 
 public class MembershipProof {
 	
-    private static int N = 128;
+    private static int N = 4;
     private static Scalar scalarN;
 
     private static Curve25519Point G;
@@ -24,6 +24,25 @@ public class MembershipProof {
     private static Scalar[] zeros;
     
     static {
+        // Set the curve base points
+        G = Curve25519Point.G;
+        H = Curve25519Point.hashToPoint(G);
+    	ones = new Scalar[N];
+    	zeros = new Scalar[N];
+    	for(int i = 0; i < N; i++) {
+    		ones[i] = Scalar.ONE;
+    		zeros[i] = Scalar.ZERO;
+    	}
+    	scalarN = Scalar.intToScalar(N);
+        Hi = new Curve25519Point[N];
+        for (int i = 0; i < N; i++)
+        {
+            Hi[i] = getHpnGLookup(2*i+1);
+        }
+    }
+
+    public static void setN(int n) {
+    	N = n;
     	ones = new Scalar[N];
     	zeros = new Scalar[N];
     	for(int i = 0; i < N; i++) {
@@ -79,6 +98,14 @@ public class MembershipProof {
 			seed = hashToScalar(concat(seed.bytes,this.zsk.bytes));
 			seed = hashToScalar(concat(seed.bytes,this.t.bytes));
 			return seed;
+		}
+		
+		public byte[] toBytes() {
+			byte[] ret = concat(this.A1.toBytes(), this.A2.toBytes(), this.S1.toBytes(), this.S2.toBytes());
+			ret = concat(ret, this.T1.toBytes(), this.T2.toBytes(), this.taux.bytes);
+			ret = concat(ret, this.mu.bytes, this.zalpha.bytes, this.zsk.bytes);
+			ret = concat(ret, this.t.bytes);
+			return ret;
 		}
 		
 		public int size() {
@@ -163,7 +190,8 @@ public class MembershipProof {
     }
     
     public static ProofTuple PROVE(Curve25519Point[] Yi, int istar, Scalar sk, boolean compressed, Scalar seed, byte[] text, Curve25519Point S3) {
-        // 1. Prepare Index
+
+    	// 1. Prepare Index
         Scalar[] bL = InnerProductArgument.VectorScalar(zeros, Scalar.ZERO);
         bL[istar] = Scalar.ONE;
         Scalar[] bR = InnerProductArgument.VectorSubtract(bL, ones);
@@ -212,7 +240,7 @@ public class MembershipProof {
         Curve25519Point T2 = G.scalarMultiply(t2).add(H.scalarMultiply(tau2));
         
         // Challenge 2
-        Scalar x = H1(concat(concat(concat(concat(concat(w.bytes,y.bytes),z.bytes),T1.toBytes()),T2.toBytes()),text));
+        Scalar x = H1(concat(concat(w.bytes,y.bytes,z.bytes,T1.toBytes()),T2.toBytes(),text));
         
         // Response
         Scalar taux = tau1.mul(x).add(tau2.mul(x.sq()));
@@ -303,9 +331,6 @@ public class MembershipProof {
     }
 
 	public static void main(String[] args) {
-        // Set the curve base points
-        G = Curve25519Point.G;
-        H = Curve25519Point.hashToPoint(G);
         Curve25519Point S3 = Curve25519Point.hashToPoint(H);
         
         Random rando = new Random();

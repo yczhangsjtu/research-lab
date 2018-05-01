@@ -7,20 +7,23 @@ import how.monero.hodl.bulletproof.OptimizedLogBulletproof;
 import how.monero.hodl.crypto.Curve25519Point;
 import how.monero.hodl.crypto.Curve25519PointPair;
 import how.monero.hodl.crypto.Scalar;
-import how.monero.hodl.ringSignature.StringCT.KeyGenResult;
-import how.monero.hodl.ringSignature.StringCT.SpendSignature;
 
-import static how.monero.hodl.ringSignature.StringCT.KEYGEN;
 import static how.monero.hodl.crypto.Scalar.randomScalar;
 import static how.monero.hodl.crypto.CryptoUtil.hashToScalar;
 import static how.monero.hodl.bulletproof.MembershipProof.H5;
 import static how.monero.hodl.util.ByteUtil.concat;
 
+import java.math.BigInteger;
+
 public class BulletRingCT {
+	
+	private static Curve25519Point G = Curve25519Point.G;
+	private static Curve25519Point H = Curve25519Point.hashToPoint(Curve25519Point.G);
+	
 	public static class SK {
-		Scalar sk;
-		Scalar m;
-		Scalar r;
+		public Scalar sk;
+		public Scalar m;
+		public Scalar r;
 		
 	    public SK(Scalar sk, Scalar m, Scalar r) {
 	        this.r = r;
@@ -33,7 +36,39 @@ public class BulletRingCT {
 	    	return "(sk: " + bytesToHex(sk) + ", m: " + bytesToHex(m) + ", r: " + bytesToHex(r) + ")";
 	    }
 	}
+
+
+	public static KeyGenResult KEYGEN(Scalar m) {
+		SK sk = new SK(randomScalar(), m, randomScalar());
+		Curve25519Point ki = G.scalarMultiply(sk.r);
+		Curve25519PointPair pk = new Curve25519PointPair(
+				G.scalarMultiply(sk.sk),
+				ki.add(H.scalarMultiply(sk.m)));
+		return new KeyGenResult(sk, ki, pk);
+	}
+
+	public static KeyGenResult KEYGEN(BigInteger m) {
+		return KEYGEN(new Scalar(m));
+	}
+
+	public static KeyGenResult KEYGEN() {
+		return KEYGEN(randomScalar());
+	}
 	
+	public static class KeyGenResult {
+		public SK sk;
+		public Curve25519Point ki;
+		public Curve25519PointPair pk = null;
+		public KeyGenResult(SK sk, Curve25519Point ki, Curve25519PointPair pk) {
+			this.sk = sk; this.ki = ki; this.pk = pk;
+		}
+
+		@Override
+		public String toString() {
+			return "sk: " + sk.toString() + ", ki: " + bytesToHex(ki.toBytes()) + ", pk: " + (pk==null ? "(no pk)" : "pk: " + pk);
+		}
+	}
+	  
 	public static class SpendSignature {
 		public MembershipProof.ProofTuple sigma;
 		public OptimizedLogBulletproof.ProofTuple[] pi;
@@ -48,11 +83,18 @@ public class BulletRingCT {
 			U = u;
 			AR = ar;
 		}
+	    public byte[] toBytes() {
+	        byte[] result = sigma.toBytes();
+	        for(int i = 0; i < pi.length; i++)
+	        	result = concat(result, pi[i].toBytes());
+	        result = concat(result, S3.toBytes());
+	        for(int i = 0; i < U.length; i++)
+	        	result = concat(result, U[i].toBytes());
+	        return result;
+	    }
 	}
 	
 	public static SpendSignature SPEND(SpendParams sp) {
-		Curve25519Point G = Curve25519Point.G;
-		Curve25519Point H = Curve25519Point.hashToPoint(G);
 		Curve25519Point u = Curve25519Point.hashToPoint(H);
 		
 		// 1.a Check the balance
@@ -74,11 +116,12 @@ public class BulletRingCT {
 		Curve25519PointPair[] AR = new Curve25519PointPair[m];
 		for(int i = 0; i < m; i++) {
 			rout[i] = randomScalar();
-			Cout[i] = G.scalarMultiply(sp.output[i]).add(H.scalarMultiply(rout[i]));
+			Cout[i] = H.scalarMultiply(sp.output[i]).add(G.scalarMultiply(rout[i]));
 			AR[i] = new Curve25519PointPair(sp.out[i],Cout[i]);
 			Coutsum = Coutsum.add(Cout[i]);
 			routsum = routsum.add(rout[i]);
 		}
+
 		
 		// 2. Prepare a set of public keys and a secret key
 		int I = sp.pk[0].length, M = sp.pk.length;
@@ -136,6 +179,7 @@ public class BulletRingCT {
 		byte[] text = v.bytes;
 		for(int i = 0; i < U.length; i++)
 			text = concat(text,U[i].toBytes());
+		
 		MembershipProof.ProofTuple sigma = MembershipProof.PROVE(Y, sp.iAsterisk, skstar, true, seed, text, S3);
 		OptimizedLogBulletproof.ProofTuple[] pi = new OptimizedLogBulletproof.ProofTuple[m];
 		for(int i = 0; i < m; i++)
@@ -144,7 +188,7 @@ public class BulletRingCT {
 		return new SpendSignature(sigma, pi, S3, U, AR);
 	}
 	
-	public static boolean VERIFY(Curve25519Point[] ki, Curve25519PointPair[][] pk, Curve25519Point[] co, Curve25519Point co1, SpendSignature spendSignature) {
+	public static boolean VERIFY(Curve25519PointPair[][] pk, SpendSignature spendSignature) {
 		Curve25519Point G = Curve25519Point.G;
 		Curve25519Point H = Curve25519Point.hashToPoint(G);
 		Curve25519Point u = Curve25519Point.hashToPoint(H);
@@ -156,6 +200,9 @@ public class BulletRingCT {
 		int I = pk[0].length, M = pk.length, m = spendSignature.AR.length;
 		Curve25519Point[] pktilde = new Curve25519Point[I];
 		Curve25519Point Coutsum = Curve25519Point.ZERO;
+		for(int i = 0; i < spendSignature.AR.length; i++) {
+			Coutsum = Coutsum.add(spendSignature.AR[i].P2);
+		}
 		for(int i = 0; i < I; i++) {
 			pktilde[i] = Curve25519Point.ZERO;
 			for(int k = 0; k < M; k++) pktilde[i] = pktilde[i].add(pk[k][i].P1).add(pk[k][i].P2);

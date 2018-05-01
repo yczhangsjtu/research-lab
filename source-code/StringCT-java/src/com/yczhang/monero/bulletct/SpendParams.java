@@ -8,9 +8,6 @@ public class SpendParams {
   public int iAsterisk;
   public Curve25519PointPair[][] pk;
   public BulletRingCT.SK[] sk;
-  public Curve25519Point[] ki;
-  public Curve25519Point[] co;
   public Curve25519Point[] out;
   public Scalar[] output;
-  public byte[] M;
 }

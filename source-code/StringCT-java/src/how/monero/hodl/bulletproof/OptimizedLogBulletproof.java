@@ -24,6 +24,16 @@ public class OptimizedLogBulletproof
     static {
     	N = 64;
     	logN = 6;
+        // Set the curve base points
+        G = Curve25519Point.G;
+        H = Curve25519Point.hashToPoint(G);
+        Gi = new Curve25519Point[N];
+        Hi = new Curve25519Point[N];
+        for (int i = 0; i < N; i++)
+        {
+            Gi[i] = getHpnGLookup(2*i);
+            Hi[i] = getHpnGLookup(2*i+1);
+        }
     }
 
     public static class ProofTuple
@@ -55,6 +65,19 @@ public class OptimizedLogBulletproof
             this.a = a;
             this.b = b;
             this.t = t;
+        }
+        
+        public byte[] toBytes() {
+        	byte[] ret = concat(V.toBytes(),A.toBytes(),S.toBytes(),T1.toBytes());
+        	ret = concat(ret,T2.toBytes(),taux.bytes,mu.bytes);
+        	for(int i = 0; i < L.length; i++) {
+        		ret = concat(ret,L[i].toBytes());
+        	}
+        	for(int i = 0; i < R.length; i++) {
+        		ret = concat(ret,R[i].toBytes());
+        	}
+        	ret = concat(ret,a.bytes,b.bytes,t.bytes);
+        	return ret;
         }
     }
     
@@ -528,16 +551,6 @@ public class OptimizedLogBulletproof
 
     public static void main(String[] args)
     {
-        // Set the curve base points
-        G = Curve25519Point.G;
-        H = Curve25519Point.hashToPoint(G);
-        Gi = new Curve25519Point[N];
-        Hi = new Curve25519Point[N];
-        for (int i = 0; i < N; i++)
-        {
-            Gi[i] = getHpnGLookup(2*i);
-            Hi[i] = getHpnGLookup(2*i+1);
-        }
 
         // Run a bunch of randomized trials
         Random rando = new Random();

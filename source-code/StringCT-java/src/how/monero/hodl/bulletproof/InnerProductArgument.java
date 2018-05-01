@@ -9,8 +9,8 @@ import static how.monero.hodl.crypto.CryptoUtil.*;
 import static how.monero.hodl.util.ByteUtil.*;
 
 public class InnerProductArgument {
-    private static int N = 128;
-    private static int logN = 7;
+    private static int N = 4;
+    private static int logN = 2;
     private static Curve25519Point G;
     private static Curve25519Point H;
     private static Curve25519Point U;
@@ -24,6 +24,20 @@ public class InnerProductArgument {
         U = Curve25519Point.hashToPoint(H);
         Gi = new Curve25519Point[N];
         Hi = new Curve25519Point[N];
+        logN = (int)Math.round(Math.log(N));
+        
+        for (int i = 0; i < N; i++)
+        {
+            Gi[i] = getHpnGLookup(2*i);
+            Hi[i] = getHpnGLookup(2*i+1);
+        }
+    }
+    
+    public static void setN(int n) {
+    	N = n;
+        Gi = new Curve25519Point[N];
+        Hi = new Curve25519Point[N];
+    	logN = (int)Math.round(Math.log(N)/Math.log(2));
         for (int i = 0; i < N; i++)
         {
             Gi[i] = getHpnGLookup(2*i);
