@@ -18,7 +18,7 @@ public class StringCTBenchmarks {
   public static void spendTest() throws IOException {
 
     int[] inputsVariants = new int[]{1, 2, 3, 4, 5, 10, 20};
-    int[] decompositionExponentVariants = new int[]{2, 3, 4, 5, 6, 7, 8, 9, 10};
+    int[] decompositionExponentVariants = new int[]{2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
 
     List<List<String>> sheet = new ArrayList<>();
     List<String> sheetColTitles = new ArrayList<>();
