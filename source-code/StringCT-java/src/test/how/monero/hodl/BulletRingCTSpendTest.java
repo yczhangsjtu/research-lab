@@ -59,7 +59,7 @@ public class BulletRingCTSpendTest {
 	    boolean pauseAtEachStage = false;
 	    int testIterations = 1;
 	    int[] candinputs = new int[] {1,1,2,3,4,5,10,20};
-	    int[] candringsize = new int[] {4,8,16,32,64,128,256,512,1024,2048};
+	    int[] candringsize = new int[] {4096};//{4,8,16,32,64,128,256,512,1024,2048};
 	    String summary = "";
 
 	    for(int count = 0; count < candinputs.length; count++) {
